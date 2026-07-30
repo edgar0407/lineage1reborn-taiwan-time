@@ -1,3 +1,5 @@
+English | [繁體中文](README.zh-TW.md)
+
 # Lineage 1 Reborn - Taiwan Time
 
 A Tampermonkey userscript that converts the Eastern Time (ET / EST / EDT) displayed on
