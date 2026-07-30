@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Lineage 1 Reborn - Taiwan Time
 // @namespace    https://github.com/edgar0407/lineage1reborn-taiwan-time
-// @version      1.0.0
+// @version      1.1.0
 // @description  Convert Lineage 1 Reborn Eastern Time displays to Taiwan time.
 // @author       edgar0407
 // @license      MIT
@@ -82,6 +82,19 @@
         return best;
     }
 
+    // --- Badge rendering for converted TW values ---
+
+    var BADGE_STYLE = 'display:inline-block;background-color:#16a34a;color:#fff;' +
+        'padding:0 6px;border-radius:4px;font-weight:600;white-space:nowrap;';
+
+    function makeBadge(text) {
+        var span = document.createElement('span');
+        span.className = 'l1r-tw-badge';
+        span.style.cssText = BADGE_STYLE;
+        span.textContent = text;
+        return span;
+    }
+
     // --- Taiwan-side formatters (each mirrors the source string's own layout) ---
 
     function formatClockTaiwan(date) {
@@ -138,7 +151,8 @@
         function convert() {
             var text = formatClockTaiwan(new Date());
             obs.disconnect();
-            clockEl.textContent = text;
+            clockEl.textContent = '';
+            clockEl.appendChild(makeBadge(text));
             obs.observe(clockEl, { childList: true, characterData: true, subtree: true });
         }
 
@@ -178,7 +192,9 @@
         var prefixMatch = /^(\S+)\s+/.exec(original);
         var prefix = prefixMatch ? prefixMatch[1] : '';
 
-        endsEl.textContent = prefix ? prefix + ' ' + formatEventEndsTaiwan(date) : formatEventEndsTaiwan(date);
+        endsEl.textContent = '';
+        if (prefix) endsEl.appendChild(document.createTextNode(prefix + ' '));
+        endsEl.appendChild(makeBadge(formatEventEndsTaiwan(date)));
         endsEl.title = 'Original: ' + original;
         endsEl.dataset.l1rOriginalTime = original;
         endsEl.dataset.l1rProcessed = '1';
@@ -230,7 +246,8 @@
             var titleText = 'Original: ' + originalCombined;
 
             el.textContent = tw.day + ' ' + tw.month;
-            timeEl.textContent = tw.time + ' TW';
+            timeEl.textContent = '';
+            timeEl.appendChild(makeBadge(tw.time + ' TW'));
             el.title = titleText;
             timeEl.title = titleText;
             el.dataset.l1rProcessed = '1';

@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## [1.1.0] - 2026-07-30
+
+### Changed
+
+- Converted TW times are now rendered as a badge (green background, white text)
+  instead of plain inline text, for all three conversion points (live clock,
+  event end time, siege times).
+
 ## [1.0.0] - 2026-07-30
 
 ### Added
