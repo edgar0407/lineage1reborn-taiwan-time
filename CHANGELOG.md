@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here.
 
+## [1.2.0] - 2026-07-30
+
+### Added
+
+- Convert dates/times on the events page (`?page=events`), covering the "Event
+  Duration" and "Schedule" lines and similar prose mentions of ET times, using a
+  regex-based matcher rather than a fixed selector.
+
+### Known limitations
+
+- Recurring schedule text with no explicit date (e.g. "Friday 1:00 PM ET to
+  Monday 10:00 PM ET") is left unconverted, since there's no date to resolve
+  EDT vs. EST from.
+
 ## [1.1.0] - 2026-07-30
 
 ### Changed

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Lineage 1 Reborn - Taiwan Time
 // @namespace    https://github.com/edgar0407/lineage1reborn-taiwan-time
-// @version      1.1.0
+// @version      1.2.0
 // @description  Convert Lineage 1 Reborn Eastern Time displays to Taiwan time.
 // @author       edgar0407
 // @license      MIT
@@ -259,12 +259,103 @@
         }
     }
 
+    // --- Handler 4: prose date/time mentions on ?page=events ---
+    // Matches things like "Friday, July 24th @ 1:00pm ET" or "May 22, 2026
+    // 12:00 PM ET". Weekday name and year are both optional; entries with no
+    // month name at all (e.g. recurring "Friday 1:00 PM ET to Monday 10:00 PM
+    // ET" text with no date) are left unconverted, since there is no reliable
+    // way to pick the correct EDT/EST offset without a date.
+
+    var MONTH_NAMES_RE = 'January|February|March|April|May|June|July|August|September|October|November|December';
+    var PROSE_DATETIME_RE = new RegExp(
+        '(?:(?:Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday),\\s*)?' +
+        '(' + MONTH_NAMES_RE + ')\\s+(\\d{1,2})(?:st|nd|rd|th)?' +
+        '(?:,?\\s*(\\d{4}))?' +
+        '\\s*(?:@|at)?\\s*' +
+        '(\\d{1,2})(?::(\\d{2}))?\\s*([APap][Mm]\\.?)?\\s*ET\\b',
+        'g'
+    );
+
+    function formatProseTaiwan(date) {
+        var weekday = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Taipei', weekday: 'short' }).format(date);
+        var dm = taiwanDayMonth(date);
+        return weekday + ' ' + dm.month + ' ' + dm.day + ', ' + taiwanTime24(date) + ' TW';
+    }
+
+    // Returns null for anything not safely parseable (e.g. an hour <= 12 with no
+    // AM/PM marker) rather than guessing, so unparseable text is left as-is.
+    function convertProseDateTime(monthName, dayStr, yearStr, hourStr, minuteStr, period, now) {
+        var monthKey = monthName.slice(0, 3).toLowerCase();
+        var month = MONTH_INDEX[monthKey];
+        if (!month) return null;
+
+        var day = Number(dayStr);
+        var hour = Number(hourStr);
+        var minute = minuteStr ? Number(minuteStr) : 0;
+
+        if (hour <= 12) {
+            if (!period) return null;
+            hour = hour % 12;
+            if (/p/i.test(period)) hour += 12;
+        }
+        if (hour > 23 || minute > 59) return null;
+
+        var year = yearStr ? Number(yearStr) : inferYear(month, day, now);
+        return zonedDate(year, month, day, hour, minute, 0, SOURCE_ZONE);
+    }
+
+    function convertProseTimes() {
+        var candidates = document.body.querySelectorAll('div, p, strong, span, li, td');
+        var now = new Date();
+
+        for (var i = 0; i < candidates.length; i += 1) {
+            var el = candidates[i];
+            if (!isLeaf(el) || el.dataset.l1rProcessed === '1') continue;
+
+            var text = el.textContent;
+            if (!/\bET\b/.test(text)) continue;
+
+            PROSE_DATETIME_RE.lastIndex = 0;
+            var match;
+            var lastIndex = 0;
+            var fragments = [];
+            var replacedAny = false;
+
+            while ((match = PROSE_DATETIME_RE.exec(text)) !== null) {
+                var date = convertProseDateTime(match[1], match[2], match[3], match[4], match[5], match[6], now);
+                if (!date) continue;
+
+                if (match.index > lastIndex) {
+                    fragments.push(document.createTextNode(text.slice(lastIndex, match.index)));
+                }
+                var badge = makeBadge(formatProseTaiwan(date));
+                badge.title = 'Original: ' + match[0];
+                fragments.push(badge);
+                lastIndex = match.index + match[0].length;
+                replacedAny = true;
+            }
+            if (!replacedAny) continue;
+
+            if (lastIndex < text.length) {
+                fragments.push(document.createTextNode(text.slice(lastIndex)));
+            }
+
+            var original = text.trim();
+            el.textContent = '';
+            fragments.forEach(function (node) { el.appendChild(node); });
+            el.title = 'Original: ' + original;
+            el.dataset.l1rOriginalTime = original;
+            el.dataset.l1rProcessed = '1';
+        }
+    }
+
     // --- Bootstrap + re-scan on dynamic re-render ---
 
     function runScan() {
         try { bindClock(); } catch (e) { console.error('[L1R-TW]', e); }
         try { convertEventEnds(); } catch (e) { console.error('[L1R-TW]', e); }
         try { convertSiegeEntries(); } catch (e) { console.error('[L1R-TW]', e); }
+        try { convertProseTimes(); } catch (e) { console.error('[L1R-TW]', e); }
     }
 
     runScan();

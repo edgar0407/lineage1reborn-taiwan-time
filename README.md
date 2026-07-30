@@ -10,12 +10,14 @@ with no layout changes.
 
 | Where | Site shows | You see |
 | --- | --- | --- |
-| Header "Time Now" clock | `09:50:36 PM EDT` | `09:50:36 AM TW` |
-| Event countdown end time | `Ends Jul 30, 10:00pm ET` | `Ends Jul 31, 10:00 TW` |
-| Castle "Next Siege" time | `1 Aug 10 AM ET` | `1 Aug 22:00 TW` |
+| Header "Time Now" clock | `09:50:36 PM EDT` | `09:50:36 AM TW` (badge) |
+| Event countdown end time | `Ends Jul 30, 10:00pm ET` | `Ends Jul 31, 10:00 TW` (badge) |
+| Castle "Next Siege" time | `1 Aug 10 AM ET` | `1 Aug 22:00 TW` (badge) |
+| Events page (`?page=events`) dates | `Friday, July 24th @ 1:00pm ET` | `Sat Jul 25, 01:00 TW` (badge) |
 
 - Date rollovers are handled correctly (e.g. `1 Aug 3 PM ET` → `2 Aug 03:00 TW`).
 - EDT vs. EST (daylight saving) is resolved using IANA timezone rules, not a fixed offset.
+- Converted times are shown as a green/white badge in place of the original text.
 - Hover over any converted time to see the original ET text in a tooltip.
 - Nothing else on the page is modified — no added rows, no layout shift.
 
@@ -44,15 +46,22 @@ Tampermonkey checks the `@version` header against the URL above and offers updat
 - Siege times have no stable selector on the site, so the script matches the known
   `"<day> <month>"` / `"<hour> AM|PM ET"` text pattern in adjacent elements and replaces
   only those text nodes.
+- Events page dates/times are found with a regex that looks for a month name, day,
+  optional year, and time, anywhere inside a leaf element's text — so it also matches
+  the surrounding sentence structure (e.g. `"... - Ends Saturday, May 30 at ... ET"`)
+  without needing a fixed template.
 
 See [`docs/SPEC.md`](docs/SPEC.md) for the full specification this script was built against.
 
 ## Limitations / known scope
 
-- Only the homepage (`/`) has been verified against real markup.
-- If lineage1reborn.com changes its DOM structure or wording, the siege-time matcher
-  (which relies on text patterns, not a stable selector) may stop finding matches — it fails
-  silently rather than showing wrong data.
+- Verified against the homepage (`/`) and the events page (`?page=events`).
+- If lineage1reborn.com changes its DOM structure or wording, the text-pattern matchers
+  (siege times, events page dates) may stop finding matches — they fail silently rather
+  than showing wrong data.
+- On the events page, recurring schedule text with no date (e.g. `"Friday 1:00 PM ET
+  to Monday 10:00 PM ET"`) is left unconverted, since there's no date to resolve
+  EDT vs. EST from.
 - Not affiliated with or endorsed by Lineage 1 Reborn.
 
 ## License
