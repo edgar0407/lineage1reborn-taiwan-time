@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Lineage 1 Reborn - Taiwan Time
 // @namespace    https://github.com/edgar0407/lineage1reborn-taiwan-time
-// @version      1.2.0
+// @version      1.4.0
 // @description  Convert Lineage 1 Reborn Eastern Time displays to Taiwan time.
 // @author       edgar0407
 // @license      MIT
@@ -260,19 +260,34 @@
     }
 
     // --- Handler 4: prose date/time mentions on ?page=events ---
-    // Matches things like "Friday, July 24th @ 1:00pm ET" or "May 22, 2026
-    // 12:00 PM ET". Weekday name and year are both optional; entries with no
-    // month name at all (e.g. recurring "Friday 1:00 PM ET to Monday 10:00 PM
-    // ET" text with no date) are left unconverted, since there is no reliable
-    // way to pick the correct EDT/EST offset without a date.
+    // Matches things like "Friday, July 24th @ 1:00pm ET", "May 22, 2026
+    // 12:00 PM ET", or "Starts Aug 14, 1:00pm EDT" (abbreviated months and
+    // EDT/EST are both recognized; zonedDate() resolves the correct offset
+    // from the actual date regardless of which label is printed). Weekday
+    // name and year are both optional; entries with no month name at all
+    // (e.g. recurring "Friday 1:00 PM ET to Monday 10:00 PM ET" text with no
+    // date) are left unconverted, since there is no reliable way to pick the
+    // correct EDT/EST offset without a date.
 
-    var MONTH_NAMES_RE = 'January|February|March|April|May|June|July|August|September|October|November|December';
+    var MONTH_NAMES_RE =
+        'January|Jan\\.?|' +
+        'February|Feb\\.?|' +
+        'March|Mar\\.?|' +
+        'April|Apr\\.?|' +
+        'May|' +
+        'June|Jun\\.?|' +
+        'July|Jul\\.?|' +
+        'August|Aug\\.?|' +
+        'September|Sept\\.?|Sep\\.?|' +
+        'October|Oct\\.?|' +
+        'November|Nov\\.?|' +
+        'December|Dec\\.?';
     var PROSE_DATETIME_RE = new RegExp(
         '(?:(?:Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday),\\s*)?' +
         '(' + MONTH_NAMES_RE + ')\\s+(\\d{1,2})(?:st|nd|rd|th)?' +
-        '(?:,?\\s*(\\d{4}))?' +
-        '\\s*(?:@|at)?\\s*' +
-        '(\\d{1,2})(?::(\\d{2}))?\\s*([APap][Mm]\\.?)?\\s*ET\\b',
+        ',?\\s*(?:(\\d{4})\\s*)?' +
+        '(?:@|at)?\\s*' +
+        '(\\d{1,2})(?::(\\d{2}))?\\s*([APap][Mm]\\.?)?\\s*E[DS]?T\\b',
         'g'
     );
 
@@ -313,7 +328,7 @@
             if (!isLeaf(el) || el.dataset.l1rProcessed === '1') continue;
 
             var text = el.textContent;
-            if (!/\bET\b/.test(text)) continue;
+            if (!/\bE[DS]?T\b/.test(text)) continue;
 
             PROSE_DATETIME_RE.lastIndex = 0;
             var match;
@@ -349,6 +364,91 @@
         }
     }
 
+    // --- Handler 5: bare "H:MM AM/PM ET" mentions with no date (e.g. ?page=boss-cycles) ---
+    // These are raw wall-clock times with no month/day at all, since they
+    // describe a recurring daily schedule rather than a specific dated
+    // event, so there's no date in the text to disambiguate EDT vs EST from.
+    // Unlike year inference (genuinely ambiguous, resolved by picking the
+    // candidate closest to now), DST is not ambiguous for a given calendar
+    // day -- it's a fact the IANA database knows. So we anchor to "today" in
+    // the source zone and let zonedDate() resolve the correct offset from
+    // that date automatically. Because these are same-day windows, the
+    // converted TW time can land on the next Taiwan calendar day; when it
+    // does we append a "(TW隔日)" note so the badge isn't misread as today.
+
+    var BARE_TIME_RE = /(\d{1,2}):(\d{2})\s*([APap][Mm]\.?)\s*E[DS]?T\b/g;
+
+    function taiwanDateKey(date) {
+        return new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Asia/Taipei',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+        }).format(date);
+    }
+
+    function formatBareTimeTaiwan(date, now) {
+        var time = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Asia/Taipei',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+        }).format(date);
+        var label = time + ' TW';
+        if (taiwanDateKey(date) !== taiwanDateKey(now)) label += ' (TW隔日)';
+        return label;
+    }
+
+    function convertBareTimes() {
+        var candidates = document.body.querySelectorAll('div, p, strong, span, li, td');
+        var now = new Date();
+        var todayET = partsAt(now, SOURCE_ZONE);
+
+        for (var i = 0; i < candidates.length; i += 1) {
+            var el = candidates[i];
+            if (!isLeaf(el) || el.dataset.l1rProcessed === '1') continue;
+
+            var text = el.textContent;
+            if (!/\bE[DS]?T\b/.test(text)) continue;
+
+            BARE_TIME_RE.lastIndex = 0;
+            var match;
+            var lastIndex = 0;
+            var fragments = [];
+            var replacedAny = false;
+
+            while ((match = BARE_TIME_RE.exec(text)) !== null) {
+                var hour = Number(match[1]) % 12;
+                if (/p/i.test(match[3])) hour += 12;
+                var minute = Number(match[2]);
+                if (minute > 59) continue;
+
+                var date = zonedDate(todayET.year, todayET.month, todayET.day, hour, minute, 0, SOURCE_ZONE);
+
+                if (match.index > lastIndex) {
+                    fragments.push(document.createTextNode(text.slice(lastIndex, match.index)));
+                }
+                var badge = makeBadge(formatBareTimeTaiwan(date, now));
+                badge.title = 'Original: ' + match[0];
+                fragments.push(badge);
+                lastIndex = match.index + match[0].length;
+                replacedAny = true;
+            }
+            if (!replacedAny) continue;
+
+            if (lastIndex < text.length) {
+                fragments.push(document.createTextNode(text.slice(lastIndex)));
+            }
+
+            var original = text.trim();
+            el.textContent = '';
+            fragments.forEach(function (node) { el.appendChild(node); });
+            el.title = 'Original: ' + original;
+            el.dataset.l1rOriginalTime = original;
+            el.dataset.l1rProcessed = '1';
+        }
+    }
+
     // --- Bootstrap + re-scan on dynamic re-render ---
 
     function runScan() {
@@ -356,6 +456,7 @@
         try { convertEventEnds(); } catch (e) { console.error('[L1R-TW]', e); }
         try { convertSiegeEntries(); } catch (e) { console.error('[L1R-TW]', e); }
         try { convertProseTimes(); } catch (e) { console.error('[L1R-TW]', e); }
+        try { convertBareTimes(); } catch (e) { console.error('[L1R-TW]', e); }
     }
 
     runScan();
